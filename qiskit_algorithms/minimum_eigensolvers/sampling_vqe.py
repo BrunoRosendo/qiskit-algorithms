@@ -14,33 +14,33 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 from time import time
 from typing import Any
 
 import numpy as np
-
+from qiskit import compiler
 from qiskit.circuit import QuantumCircuit
 from qiskit.primitives import BaseSampler
-from qiskit.result import QuasiDistribution
+from qiskit.quantum_info import SparsePauliOp
 from qiskit.quantum_info.operators.base_operator import BaseOperator
+from qiskit.result import QuasiDistribution
+from qiskit_ibm_runtime import SamplerV1
 
-from ..exceptions import AlgorithmError
-from ..list_or_dict import ListOrDict
-from ..optimizers import Minimizer, Optimizer, OptimizerResult
-from ..variational_algorithm import VariationalAlgorithm, VariationalResult
 from .diagonal_estimator import _DiagonalEstimator
 from .sampling_mes import (
     SamplingMinimumEigensolver,
     SamplingMinimumEigensolverResult,
 )
+from ..exceptions import AlgorithmError
+from ..list_or_dict import ListOrDict
 from ..observables_evaluator import estimate_observables
+from ..optimizers import Minimizer, Optimizer, OptimizerResult
 from ..utils import validate_initial_point, validate_bounds
-
 # private function as we expect this to be updated in the next released
 from ..utils.set_batching import _set_default_batchsize
-
+from ..variational_algorithm import VariationalAlgorithm, VariationalResult
 
 logger = logging.getLogger(__name__)
 
@@ -188,11 +188,15 @@ class SamplingVQE(VariationalAlgorithm, SamplingMinimumEigensolver):
 
     def compute_minimum_eigenvalue(
         self,
-        operator: BaseOperator,
+        operator: SparsePauliOp,
         aux_operators: ListOrDict[BaseOperator] | None = None,
     ) -> SamplingMinimumEigensolverResult:
         # check that the number of qubits of operator and ansatz match, and resize if possible
         self._check_operator_ansatz(operator)
+
+        if isinstance(self.sampler, SamplerV1):
+            self.ansatz = compiler.transpile(self.ansatz, self.sampler._backend)
+            operator = operator.apply_layout(layout=self.ansatz.layout)
 
         if len(self.ansatz.clbits) > 0:
             self.ansatz.remove_final_measurements()
